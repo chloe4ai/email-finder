@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Email Finder</title>
+<style>
+  :root { --bg:#f6f5f1; --card:#fff; --ink:#1b1a2e; --muted:#6b6880; --faint:#9b98ad; --line:#e6e4dc; --accent:#3b5bdb; --soft:#e9edfb; --ok:#0f7a4d; --okbg:#e5f7ee; --warn:#9a6700; --warnbg:#fff4d6; --bad:#b3261e; --badbg:#fde8e6; --mono: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141420; --card:#1d1d2c; --ink:#ecebf5; --muted:#a9a7bb; --faint:#77758a; --line:#2d2d3f; --soft:#26305a; --okbg:#143826; --warnbg:#3d3012; --badbg:#431d1a; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 36px 16px 80px; }
+  h1 { font-size: 26px; letter-spacing: -0.02em; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; margin-top: 18px; }
+  .card h2 { font-size: 15px; margin: 0 0 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  input, textarea, select { font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--ink); min-width: 0; }
+  input { flex: 1 1 200px; } textarea { width: 100%; font-family: var(--mono); font-size: 13px; min-height: 90px; }
+  button { font: inherit; font-weight: 600; padding: 10px 18px; border-radius: 9px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--accent); }
+  button:disabled { opacity: .5; cursor: wait; }
+  .best { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin: 6px 0 12px; }
+  .best .email { font-family: var(--mono); font-size: 22px; font-weight: 700; }
+  .pill { display:inline-block; border-radius: 99px; padding: 2px 10px; font-size: 12px; font-weight: 700; }
+  .pill.valid, .pill.likely { background: var(--okbg); color: var(--ok); }
+  .pill.catch_all, .pill.unknown, .pill.guess, .pill.unverified { background: var(--warnbg); color: var(--warn); }
+  .pill.invalid { background: var(--badbg); color: var(--bad); }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th { text-align: left; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); padding: 8px 6px; border-bottom: 1px solid var(--line); }
+  td { padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td.mono, .mono { font-family: var(--mono); font-size: 12.5px; }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; width: 120px; overflow: hidden; display: inline-block; vertical-align: middle; margin-right: 8px; }
+  .bar i { display: block; height: 100%; background: var(--accent); }
+  .log { font-family: var(--mono); font-size: 12px; color: var(--muted); white-space: pre-wrap; margin: 10px 0 0; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; } @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+  details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  .copy { border: none; background: var(--soft); color: var(--accent); padding: 4px 10px; font-size: 12px; border-radius: 6px; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Email Finder</h1>
+  <p class="sub">Name + company (or a LinkedIn URL) → ranked, verified work email. Runs locally; nothing leaves your machine except DNS, the company site, and any provider you add a key for.</p>
+
+  <div class="card">
+    <h2>Find one</h2>
+    <div class="row">
+      <input id="name" placeholder='Full name, e.g. "Jane Doe"' />
+      <input id="company" placeholder="Company name or domain, e.g. acme.com" />
+      <input id="linkedin" placeholder="LinkedIn URL (optional)" />
+      <button id="go">Find</button>
+    </div>
+    <div id="out"></div>
+  </div>
+
+  <div class="card">
+    <h2>Batch</h2>
+    <p class="muted">One per line: <span class="mono">name, company-or-domain[, linkedin-url]</span>. Up to 200. Results also go to history.</p>
+    <textarea id="batchIn" placeholder="Eric Glyman, ramp.com&#10;Jane Doe, Acme Inc, https://linkedin.com/in/janedoe"></textarea>
+    <div class="row" style="margin-top:10px"><button id="batchGo">Run batch</button><button class="ghost" id="batchCsv" disabled>Download CSV</button></div>
+    <div id="batchOut"></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2>Verify an address</h2>
+      <div class="row"><input id="vEmail" placeholder="someone@acme.com" /><button id="vGo">Verify</button></div>
+      <div id="vOut" class="log"></div>
+    </div>
+    <div class="card">
+      <h2>Provider keys (optional)</h2>
+      <p class="muted">Add your own Apollo / Hunter / Prospeo key and the finder tries them first (they can resolve LinkedIn URLs directly). Stored only in the local database.</p>
+      <div class="row"><select id="kProv"><option>apollo</option><option>hunter</option><option>prospeo</option></select><input id="kVal" placeholder="api key (empty = remove)" /><button id="kSave">Save</button></div>
+      <div id="keys" class="log"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>History</h2>
+    <div id="hist"></div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const api = (m, p, b) => fetch(p, { method: m, headers: { 'Content-Type': 'application/json' }, body: b ? JSON.stringify(b) : undefined }).then((r) => r.json());
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const pill = (s) => `<span class="pill ${esc(s)}">${esc(s)}</span>`;
+const sig = (s) => { if (!s) return ''; const p = []; if (s.smtp) p.push(`smtp:${s.smtp.status}`); if (s.o365) p.push(`m365:${s.o365.exists === null ? '?' : s.o365.exists}`); if (s.gravatar === true) p.push('gravatar'); return p.join(' · '); };
+const copyBtn = (e) => `<button class="copy" onclick="navigator.clipboard.writeText('${esc(e)}');this.textContent='copied'">copy</button>`;
+
+function renderResult(r) {
+  if (r.error) return `<p class="pill invalid">${esc(r.error)}</p>`;
+  let h = '';
+  if (r.best) {
+    h += `<div class="best"><span class="email">${esc(r.best.email)}</span> ${copyBtn(r.best.email)} <b>${r.best.confidence}%</b> ${pill(r.best.status)} <span class="muted">${esc(r.best.pattern || '')} · ${esc(r.best.source)}${r.mx_provider ? ' · mail on ' + esc(r.mx_provider) : ''}</span></div>`;
+  } else h += `<p class="pill invalid">no email found</p>`;
+  if (r.candidates?.length > 1) {
+    h += `<table><thead><tr><th>candidate</th><th>confidence</th><th>status</th><th>pattern</th><th>signals</th></tr></thead><tbody>` +
+      r.candidates.slice(0, 8).map((c) => `<tr><td class="mono">${esc(c.email)}</td><td><span class="bar"><i style="width:${c.confidence}%"></i></span>${c.confidence}%</td><td>${pill(c.status)}</td><td class="mono">${esc(c.pattern)}</td><td class="muted">${esc(sig(c.signals))}</td></tr>`).join('') + '</tbody></table>';
+  }
+  h += `<details><summary>what happened (${r.ms} ms)</summary><pre class="log">${esc(r.steps.join('\n'))}</pre></details>`;
+  return h;
+}
+
+$('go').addEventListener('click', async () => {
+  const b = { name: $('name').value.trim(), company: $('company').value.trim(), linkedin: $('linkedin').value.trim() };
+  if (!b.name && !b.linkedin) return;
+  $('go').disabled = true; $('out').innerHTML = '<p class="muted">resolving domain, crawling site, verifying candidates…</p>';
+  try { $('out').innerHTML = renderResult(await api('POST', '/api/find', b)); } finally { $('go').disabled = false; history(); }
+});
+['name', 'company', 'linkedin'].forEach((id) => $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') $('go').click(); }));
+
+let lastBatch = [];
+$('batchGo').addEventListener('click', async () => {
+  const contacts = $('batchIn').value.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => { const [name, company, linkedin] = l.split(',').map((s) => s.trim()); return { name, company, linkedin }; });
+  if (!contacts.length) return;
+  $('batchGo').disabled = true; $('batchOut').innerHTML = `<p class="muted">running ${contacts.length} lookups…</p>`;
+  try {
+    lastBatch = await api('POST', '/api/batch', { contacts });
+    $('batchOut').innerHTML = `<table><thead><tr><th>name</th><th>domain</th><th>email</th><th>conf.</th><th>status</th></tr></thead><tbody>` +
+      lastBatch.map((r) => `<tr><td>${esc(r.name)}</td><td class="mono">${esc(r.domain || '')}</td><td class="mono">${esc(r.best?.email || '—')}</td><td>${r.best ? r.best.confidence + '%' : ''}</td><td>${r.best ? pill(r.best.status) : pill('invalid')}</td></tr>`).join('') + '</tbody></table>';
+    $('batchCsv').disabled = false;
+  } finally { $('batchGo').disabled = false; history(); }
+});
+$('batchCsv').addEventListener('click', () => {
+  const cell = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const rows = [['name', 'company', 'domain', 'linkedin', 'email', 'confidence', 'status', 'pattern', 'alternatives']].concat(lastBatch.map((r) => [r.name, r.company, r.domain, r.linkedin, r.best?.email, r.best?.confidence, r.best?.status, r.best?.pattern, (r.candidates || []).slice(1, 4).map((c) => `${c.email} (${c.confidence}%)`).join(' | ')]));
+  const blob = new Blob([rows.map((r) => r.map(cell).join(',')).join('\n')], { type: 'text/csv' });
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'emails.csv' }); a.click();
+});
+
+$('vGo').addEventListener('click', async () => { $('vOut').textContent = '…'; const r = await api('POST', '/api/verify', { email: $('vEmail').value.trim() }); $('vOut').innerHTML = `${pill(r.status)} <span class="mono">${esc(r.email)}</span>\n${esc(JSON.stringify(r.signals || r.reason, null, 1))}`; });
+
+async function keys() { const k = (await api('GET', '/api/keys')).keys; $('keys').innerHTML = k.map((x) => `${x.provider.padEnd(8)} ${x.key ? esc(x.key) + ' (' + x.source + ')' : 'not set'}`).join('\n'); }
+$('kSave').addEventListener('click', async () => { await api('POST', '/api/keys', { provider: $('kProv').value, key: $('kVal').value.trim() }); $('kVal').value = ''; keys(); });
+
+async function history() {
+  const l = (await api('GET', '/api/history')).lookups;
+  $('hist').innerHTML = l.length ? `<table><thead><tr><th>name</th><th>domain</th><th>email</th><th>conf.</th><th>status</th><th>when</th></tr></thead><tbody>` +
+    l.slice(0, 40).map((r) => `<tr><td>${esc(r.name || '')}</td><td class="mono">${esc(r.domain || '')}</td><td class="mono">${esc(r.email || '—')}</td><td>${r.confidence ?? ''}</td><td>${r.status ? pill(r.status) : ''}</td><td class="muted">${esc(r.created_at)}</td></tr>`).join('') + '</tbody></table>' : '<p class="muted">nothing yet</p>';
+}
+keys(); history();
+</script>
+</body>
+</html>

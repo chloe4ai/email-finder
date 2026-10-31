@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Email Finder",
+  "version": "0.2.0",
+  "description": "On a LinkedIn profile, one click finds the person's work email. Runs entirely in your browser; add your own Hunter or Apollo key for verified results.",
+  "action": { "default_popup": "popup.html", "default_title": "Find work email" },
+  "background": { "service_worker": "background.js", "type": "module" },
+  "options_ui": { "page": "options.html", "open_in_tab": true },
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["https://*/*"],
+  "content_scripts": [{ "matches": ["https://www.linkedin.com/in/*"], "js": ["content.js"], "run_at": "document_idle" }],
+  "icons": { "16": "icon16.png", "48": "icon48.png", "128": "icon128.png" }
+}

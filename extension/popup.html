@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8" />
+<style>
+  :root { --ink:#1b1a2e; --muted:#6b6880; --line:#e6e4dc; --accent:#3b5bdb; --ok:#0f7a4d; --okbg:#e5f7ee; --warn:#9a6700; --warnbg:#fff4d6; --bad:#b3261e; --badbg:#fde8e6; --mono: ui-monospace, Menlo, monospace; }
+  @media (prefers-color-scheme: dark) { :root { --ink:#ecebf5; --muted:#a9a7bb; --line:#2d2d3f; --okbg:#143826; --warnbg:#3d3012; --badbg:#431d1a; } body { background:#1d1d2c; } }
+  body { width: 340px; margin: 0; padding: 14px; font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); }
+  h1 { font-size: 14px; margin: 0; }
+  .head { display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px; } .head a { cursor:pointer; color: var(--muted); font-size: 16px; text-decoration: none; }
+  .muted a { color: var(--accent); cursor: pointer; }
+  label { display:block; font-size: 11px; color: var(--muted); margin-top: 8px; }
+  input { width: 100%; box-sizing: border-box; font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--ink); }
+  button { font: inherit; font-weight: 600; margin-top: 10px; width: 100%; padding: 8px; border-radius: 7px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+  button:disabled { opacity: .5; }
+  .best { margin-top: 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .email { font-family: var(--mono); font-size: 15px; font-weight: 700; word-break: break-all; }
+  .copy { width: auto; margin: 0; padding: 3px 8px; font-size: 11px; background: transparent; color: var(--accent); }
+  .pill { border-radius: 99px; padding: 1px 8px; font-size: 11px; font-weight: 700; }
+  .valid, .likely { background: var(--okbg); color: var(--ok); } .catch_all, .unknown, .guess, .unverified { background: var(--warnbg); color: var(--warn); } .invalid { background: var(--badbg); color: var(--bad); }
+  .alt { font-family: var(--mono); font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+  .muted { color: var(--muted); font-size: 12px; margin-top: 8px; }
+  .err { color: var(--bad); margin-top: 8px; }
+  .pick { font-size: 11px; color: var(--muted); margin-top: 4px; } .pick a { color: var(--accent); cursor: pointer; margin-right: 8px; }
+</style></head>
+<body>
+  <div class="head"><h1>Email Finder</h1><a id="settings" title="Settings">⚙</a></div>
+  <div class="muted" id="keyhint" style="margin:0 0 4px"></div>
+  <label>Name</label><input id="name" />
+  <label>Company or domain</label><input id="company" />
+  <div class="pick" id="pick"></div>
+  <button id="go">Find email</button>
+  <div id="out"></div>
+  <script src="popup.js"></script>
+</body></html>
