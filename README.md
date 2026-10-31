@@ -1,20 +1,84 @@
 # Email Finder
 
-Find and verify someone's **work email** from a name + company, or from a LinkedIn URL.
-A zero-dependency take on Wiza / Hunter. The same engine runs two ways:
+Find someone's **work email** from their LinkedIn profile, in one click.
+A free, open-source take on Wiza / Apollo's Chrome extensions: it runs entirely in your
+browser, needs no account, and sends nothing to a server of ours (there is none).
 
-- **Chrome extension** (`extension/`) — one click on a LinkedIn profile, runs entirely in the
-  browser, nothing to start, nothing hosted. This is the one to share.
-- **CLI + local web UI** (Node 22+, SQLite) — batch CSV runs, history, SMTP probing where port 25 is open.
+## Install the Chrome extension (2 minutes)
+
+1. Download **`email-finder-extension-0.2.3.zip`** from the
+   [latest release](https://github.com/chloe4ai/email-finder/releases/latest).
+2. Unzip it into a folder you'll keep (Chrome loads the extension from that folder, so don't
+   leave it in Downloads and delete it later).
+3. In Chrome, open `chrome://extensions`, turn on **Developer mode** (top right), click
+   **Load unpacked**, and choose the unzipped `extension` folder.
+4. Pin it: click the puzzle-piece icon in Chrome's toolbar and pin **Email Finder**
+   (the yellow **@**).
+
+## Use it
+
+1. Open anyone's LinkedIn profile (`linkedin.com/in/…`).
+2. Click the yellow **@** icon.
+3. Name and company fill in by themselves and the lookup starts. In a few seconds you get
+   the best email, a **copy** button, and two or three alternatives.
+
+If the company is wrong (for example the person changed jobs but didn't update LinkedIn),
+edit it and click **Find email**. The popup also works as a plain name + company search on
+any page.
+
+### Reading the result
+
+| Label | Meaning |
+|---|---|
+| **valid** | Confirmed to exist (by Microsoft 365, Hunter, or Lusha). Safe to send. |
+| **likely** | Strong evidence, not confirmed. Usually right. |
+| **catch_all** | The company's server accepts every address, so nobody can confirm it. |
+| **guess** | Best guess from the company's email format. Send it, but expect some bounces. |
+
+The small line under the email says where it came from: `hunter`, or `pattern-engine` for
+the free guess.
+
+### Free, or with a key?
+
+- **No key (free, unlimited).** Works well for companies whose email runs on Microsoft 365,
+  which it can verify. For Google Workspace and most others it gives a format-based guess.
+- **Add a free Hunter key (50 lookups a month, verified).** Sign up at
+  [hunter.io](https://hunter.io/users/sign_up), copy your API key, click **⚙** in the popup,
+  paste it into **Hunter**, and save. Keys stay in your browser and are never shared.
+  When the 50 credits run out, the extension quietly falls back to the free mode.
+- Apollo and Prospeo keys are also supported, but their free plans don't include API access.
+
+### Need more lookups? Use Claude + Lusha
+
+If you use Claude, connect the **Lusha** connector (free plan, about 40+ lookups a month) and
+paste LinkedIn links into the chat. Claude looks them up in Lusha's database and falls back to
+this engine when Lusha has no match. Lusha's credits are separate from Hunter's, so the two add
+up. It's also the best second try when the extension only gives a `guess`.
+
+See [docs/FINDINGS.md](docs/FINDINGS.md) for test results and a comparison of free
+email-finder providers.
+
+## For developers: command line and local web UI
+
+Node 22+, no dependencies. Adds batch CSV runs, a lookup history, and SMTP probing on networks
+where outbound port 25 is open.
 
 ```bash
+git clone https://github.com/chloe4ai/email-finder.git && cd email-finder
 node bin/find.js "Satya Nadella" microsoft.com
 node bin/find.js --linkedin https://www.linkedin.com/in/jane-doe/ --company "Acme"
 node bin/find.js --csv contacts.csv            # columns: name, company, linkedin
-node bin/find.js verify someone@acme.com
-node bin/find.js "Name" acme.com --free        # skip paid providers, spend no credits
+node bin/find.js verify someone@acme.com --free
+node bin/find.js keys set hunter <key>         # store a provider key for the CLI
 node server.js                                 # web UI → http://localhost:4790
 ```
+
+Add `--free` to any lookup to skip paid providers and spend no credits. The CLI keeps its own
+keys in `data/finder.db`; they are separate from the extension's.
+
+To work on the extension from a checkout, run `npm run build:extension` (copies `engine/` into
+`extension/engine/`), then **Load unpacked** the `extension` folder. `npm run zip:extension`
+builds the release zip in `dist/`.
 
 ## How it finds an address
 
@@ -48,44 +112,16 @@ storage). Defaults work in any runtime with `fetch` + WebCrypto: DNS-over-HTTPS,
 in-memory store. Node swaps in real DNS, a port-25 probe and SQLite; the extension swaps in
 `chrome.storage`. After editing anything in `engine/`, run `npm run build:extension`.
 
-## Honest limits
+## Limits
 
-See [docs/FINDINGS.md](docs/FINDINGS.md) for test results, a comparison of free email-finder
-providers (API and MCP), and how the extension reads LinkedIn's current layout.
-
-
-- LinkedIn itself is never scraped. Give the person's name + company, or add an Apollo /
-  Prospeo key, or read the profile in your own logged-in browser.
+- LinkedIn is not scraped in bulk. The extension reads only the profile you are viewing, in
+  your own logged-in session, and at most loads that person's experience page once to find
+  their current company. The CLI never touches LinkedIn; give it a name + company.
 - Google-Workspace-hosted domains cannot be verified for free when port 25 is blocked; results
   there are pattern-ranked guesses (typically 40–60% for `first.last`) until you add a key.
 - Non-Latin names need their romanised form to build an address.
 
-## Chrome extension (one click on a LinkedIn profile)
-
-On any `linkedin.com/in/…` page the popup reads the name and current company from the page you
-are already looking at (your own login, no scraping service), runs the engine inside the
-browser, and shows the best email with a copy button and the alternatives. Results are cached
-for an hour per profile; a lookup keeps running if you close the popup.
-
-**No server, no account.** Free signals (company-site crawl, pattern inference, Microsoft 365
-existence, Gravatar) run with no setup. For verified results on other domains, each user adds
-their own Hunter / Apollo / Prospeo key on the extension's settings page — keys stay in that
-browser profile and are never bundled into the extension.
-
-Install from a zip (`npm run zip:extension` → `dist/email-finder-extension-<version>.zip`,
-or a GitHub release):
-
-1. Unzip it somewhere permanent.
-2. In Chrome open `chrome://extensions`, turn on **Developer mode** (top right), click
-   **Load unpacked**, and pick the unzipped `extension` folder.
-3. Open a LinkedIn profile and click the icon. Click ⚙ in the popup to add a Hunter key.
-
-From a checkout, run `npm run build:extension` first, then load the `extension` folder.
-
-LinkedIn changes its page markup often. If the company field comes up empty, type it in; the
-popup also works as a plain name + company lookup on any site.
-
-### Permissions, for the Web Store listing
+## Extension permissions
 
 - `https://*/*` — the engine fetches the target company's own website to learn its address
   format, and calls Cloudflare DNS-over-HTTPS, login.microsoftonline.com, gravatar.com and the
