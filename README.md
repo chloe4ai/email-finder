@@ -55,7 +55,7 @@ paste LinkedIn links into the chat. Claude looks them up in Lusha's database and
 this engine when Lusha has no match. Lusha's credits are separate from Hunter's, so the two add
 up. It's also the best second try when the extension only gives a `guess`.
 
-See [docs/FINDINGS.md](docs/FINDINGS.md) for test results and a comparison of free
+See [FINDINGS.md](FINDINGS.md) for test results and a comparison of free
 email-finder providers.
 
 ## For developers: command line and local web UI
