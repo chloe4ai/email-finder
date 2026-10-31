@@ -50,6 +50,10 @@ in-memory store. Node swaps in real DNS, a port-25 probe and SQLite; the extensi
 
 ## Honest limits
 
+See [docs/FINDINGS.md](docs/FINDINGS.md) for test results, a comparison of free email-finder
+providers (API and MCP), and how the extension reads LinkedIn's current layout.
+
+
 - LinkedIn itself is never scraped. Give the person's name + company, or add an Apollo /
   Prospeo key, or read the profile in your own logged-in browser.
 - Google-Workspace-hosted domains cannot be verified for free when port 25 is blocked; results
