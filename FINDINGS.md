@@ -119,7 +119,7 @@ the card still shows that company). The company field stays editable for that ca
 
 - Google Workspace and gateway-protected domains can't be verified for free.
 - Non-Latin names need their romanised form.
-- The Chrome Web Store listing is not done yet; installs go through a GitHub release zip
-  and "Load unpacked".
+- Not on the Chrome Web Store, by choice. Installs go through the GitHub release zip and
+  "Load unpacked".
 - Idea not yet built: skip Hunter for Microsoft 365 domains, where the free check is
   already conclusive, to save credits.
