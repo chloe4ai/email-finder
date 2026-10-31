@@ -45,15 +45,50 @@
     return '';
   }
 
+  // The block to the right of the name: current company first, then school.
+  // It has no stable markup, so read it by position: the lines after
+  // "Contact info" and before the followers / connections / mutual line.
+  const STOP = /followers?$|connections?$|mutual connection|^message$|^connect$|^follow(ing)?$|^more$|^\d[\d,+]*$/i;
+  const SCHOOL = /\b(university|universit[äeé]|college|school|institute of technology|academy|polytechnic)\b|大学|學|学院/i;
+  function rightPanel(card) {
+    const ls = lines(card);
+    const i = ls.findIndex((l) => /^contact info$/i.test(l));
+    if (i < 0) return [];
+    const out = [];
+    for (const l of ls.slice(i + 1)) {
+      if (STOP.test(l)) break;
+      if (l === '·' || l.length < 2) continue;
+      out.push(l);
+    }
+    return out.filter((l) => !SCHOOL.test(l));
+  }
+
+  // Fallback: the person's experience page, fetched once in your own session.
+  // Its first company logo is the current employer.
+  async function experiencePageCompany() {
+    const m = location.pathname.match(/^\/in\/[^/]+/);
+    if (!m) return null;
+    try {
+      const html = await fetch(`${m[0]}/details/experience/`, { credentials: 'include' }).then((r) => (r.ok ? r.text() : ''));
+      const hit = html.match(/a11yText\\*"\s*:\s*\\*"([^"\\]{1,80}?) logo\\*"/);
+      if (hit) return hit[1];
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      return doc.querySelector('a[href*="/company/"] img[alt$=" logo"]')?.alt.replace(/ logo$/, '') || null;
+    } catch { return null; }
+  }
+
   function sectionByHeading(re) {
     return [...document.querySelectorAll('main section')].find((s) => re.test(text(s.querySelector('h2'))));
   }
 
-  function scrape() {
+  async function scrape() {
     const name = profileName();
     const card = name ? topCard(name) : null;
     const headline = card ? headlineFrom(card, name) : '';
     const companies = [];
+
+    // 0. the company shown to the right of the name
+    if (card) for (const c of rightPanel(card)) companies.push({ company: clean(c), how: 'top-card-right' });
 
     // 1. top card: a "current company" button or a /company/ link inside the card itself
     if (card) {
@@ -81,6 +116,12 @@
     const m = headline.match(/(?:\bat\b|@)\s*([^|•·,]+)/i);
     if (m) companies.push({ company: clean(m[1]), how: 'headline' });
 
+    // 4. nothing on the profile page itself → read the experience page
+    if (!companies.length) {
+      const c = await experiencePageCompany();
+      if (c) companies.push({ company: clean(c), how: 'experience-page' });
+    }
+
     const seen = new Set();
     const uniq = companies.filter((c) => c.company && c.company.length < 80 && !/^(full-time|part-time|present)$/i.test(c.company)
       && !seen.has(c.company.toLowerCase()) && seen.add(c.company.toLowerCase()));
@@ -89,7 +130,7 @@
 
   window.__emailFinderScrape = scrape; // handy for debugging from DevTools
   chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
-    if (msg && msg.type === 'scrape') reply(scrape());
-    return true;
+    if (msg && msg.type === 'scrape') { scrape().then(reply, () => reply(null)); return true; }
+    return false;
   });
 })();

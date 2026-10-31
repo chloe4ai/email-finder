@@ -30,7 +30,7 @@ function render(r) {
 async function find(force = false) {
   const input = { name: $('name').value.trim(), company: $('company').value.trim(), linkedin };
   if (!input.name) return;
-  $('go').disabled = true; $('out').innerHTML = '<div class="muted">looking up… (10–20 s the first time)</div>';
+  $('go').disabled = true; $('out').innerHTML = '<div class="muted">looking up…</div>';
   try {
     const r = await send({ type: 'find', input, force });
     $('out').innerHTML = render(r);
