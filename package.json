@@ -1,6 +1,6 @@
 {
   "name": "email-finder",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Find and verify work email addresses from a name + company or a LinkedIn URL. Zero dependencies, Node 22+.",
   "bin": {
     "find": "bin/find.js"

@@ -73,21 +73,34 @@ const apollo = {
   },
 };
 
+// Prospeo Enrich Person API (https://prospeo.io/api-docs/enrich-person).
+// 1 credit per email found; no charge on NO_MATCH or for a record enriched in
+// the last 90 days. API access needs a paid Prospeo plan.
 const prospeo = {
   name: 'prospeo',
   needs: ['any'],
-  async find({ first, last, domain, linkedin }, key) {
-    let url; let body;
-    if (linkedin) { url = 'https://api.prospeo.io/linkedin-email-finder'; body = { url: linkedin }; }
-    else if (first && last && domain) { url = 'https://api.prospeo.io/email-finder'; body = { first_name: first, last_name: last, company: domain }; }
-    else return null;
-    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-KEY': key }, body: JSON.stringify(body), signal: T(15000) });
-    const j = await r.json();
-    if (j.error) return null;
-    const e = j.response?.email?.email || j.response?.email;
-    if (!e) return null;
-    const st = j.response?.email?.email_status || j.response?.email_status || null;
-    return { email: e, confidence: st === 'VALID' ? 0.95 : 0.7, status: st, provider: 'prospeo', raw: { status: st } };
+  async find({ first, last, domain, company, linkedin }, key) {
+    const data = {};
+    if (linkedin) data.linkedin_url = linkedin;
+    if (first) data.first_name = first;
+    if (last) data.last_name = last;
+    if (domain) data.company_website = domain;
+    if (company) data.company_name = company;
+    if (!data.linkedin_url && !(data.first_name && data.last_name && (data.company_website || data.company_name))) return null;
+    const r = await fetch('https://api.prospeo.io/enrich-person', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-KEY': key }, body: JSON.stringify({ data }), signal: T(20000),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (j.error_code === 'NO_MATCH') return null;
+    if (j.error || !r.ok) throw new Error(`prospeo: ${j.error_code || r.status}${j.error_code === 'INVALID_API_KEY' ? ' (API access needs a paid Prospeo plan)' : ''}`);
+    const em = j.person?.email;
+    if (!em?.email || em.email.includes('*')) return null;
+    const verified = em.status === 'VERIFIED';
+    return {
+      email: em.email, confidence: verified ? 0.95 : 0.7, status: verified ? 'valid' : (em.status || null), provider: 'prospeo',
+      person: { name: j.person.full_name, title: j.person.current_job_title, company: j.company?.name, domain: j.company?.domain, linkedin: j.person.linkedin_url },
+      raw: { status: em.status, method: em.verification_method, free: j.free_enrichment },
+    };
   },
 };
 
