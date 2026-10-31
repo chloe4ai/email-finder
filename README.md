@@ -18,7 +18,7 @@ browser, needs no account, and sends nothing to a server of ours (there is none)
 ## Use it
 
 1. Open anyone's LinkedIn profile (`linkedin.com/in/…`).
-2. Click the yellow **@** icon.
+2. Click the yellow **@** icon <img src="extension/icon48.png" alt="Email Finder icon: a black @ on a yellow square" width="20" height="20" align="absmiddle"> in Chrome's toolbar.
 3. Name and company fill in by themselves and the lookup starts. In a few seconds you get
    the best email, a **copy** button, and two or three alternatives.
 
