@@ -7,12 +7,16 @@ async function scrapeActiveTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab || !/linkedin\.com\/in\//.test(tab.url || '')) return null;
   linkedin = tab.url.split('?')[0];
+  // fallback if the page can't be read: "(3) Megan Hart | LinkedIn" → "Megan Hart"
+  const fromTitle = { name: (tab.title || '').replace(/^\(\d+\)\s*/, '').split('|')[0].trim(), headline: '', companies: [] };
   const ask = () => chrome.tabs.sendMessage(tab.id, { type: 'scrape' });
-  try { return await ask(); } catch {
-    // page was open before the extension was installed → inject the content script now
-    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
-    try { return await ask(); } catch { return null; }
+  let s = null;
+  try { s = await ask(); } catch {
+    // page was open before the extension was installed or reloaded → inject the content script now
+    try { await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }); s = await ask(); } catch { s = null; }
   }
+  if (!s || !s.name) return fromTitle.name && !/^linkedin$/i.test(fromTitle.name) ? fromTitle : null;
+  return s;
 }
 
 function render(r) {
@@ -39,8 +43,9 @@ async function find(force = false) {
 
 (async () => {
   $('settings').onclick = () => chrome.runtime.openOptionsPage();
-  const keys = await send({ type: 'keys' }).catch(() => []);
-  if (!keys.length) $('keyhint').innerHTML = 'Free signals only. <a id="addkey">Add a Hunter key</a> for verified results.';
+  const keys = await Promise.race([send({ type: 'keys' }), new Promise((r) => setTimeout(() => r(null), 1500))]).catch(() => null);
+  if (!Array.isArray(keys)) $('keyhint').innerHTML = '';
+  else if (!keys.length) $('keyhint').innerHTML = 'Free signals only. <a id="addkey">Add a Hunter key</a> for verified results.';
   const ak = $('addkey'); if (ak) ak.onclick = () => chrome.runtime.openOptionsPage();
 
   const s = await scrapeActiveTab();
@@ -52,6 +57,7 @@ async function find(force = false) {
       for (const a of $('pick').querySelectorAll('a')) a.onclick = () => { $('company').value = a.dataset.c; find(); };
     }
     if (s.name && s.companies.length) find();
+    else { $('out').innerHTML = '<div class="muted">Couldn\'t read the company from this profile. Type it above and press Enter.</div>'; $('company').focus(); }
   } else {
     $('out').innerHTML = '<div class="muted">Open a LinkedIn profile (linkedin.com/in/…) and the fields fill in by themselves — or type them here.</div>';
   }
