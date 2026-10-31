@@ -3,7 +3,7 @@
 //   find "Jane Doe" acme.com
 //   find --linkedin https://linkedin.com/in/jane-doe --company "Acme Inc"
 //   find --csv contacts.csv --out results.csv      (columns: name, company, linkedin)
-//   find verify someone@acme.com
+//   find verify someone@acme.com [--free]
 //   find keys [set hunter|apollo|prospeo <key> | unset <provider>]
 //   find history
 //   --free on any lookup skips the paid providers (no credits spent)
@@ -48,7 +48,7 @@ const csvCell = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"
   const { flags, pos } = parse(process.argv.slice(2));
   const cmd = pos[0];
 
-  if (cmd === 'verify') { const r = await verifyEmail(pos[1]); console.log(`\n  ${mark[r.status] || '·'} ${c.b(r.email)} → ${r.status}  ${c.d(JSON.stringify(r.signals || r.reason))}\n`); return; }
+  if (cmd === 'verify') { const r = await verifyEmail(pos[1], { keys: flags.free ? {} : undefined }); console.log(`\n  ${mark[r.status] || '·'} ${c.b(r.email)} → ${r.status}  ${c.d(JSON.stringify(r.signals || r.reason))}\n`); return; }
   if (cmd === 'keys') {
     if (pos[1] === 'set') { await db.setProviderKey(pos[2], pos[3]); console.log(c.g(`  ✓ ${pos[2]} key stored in ${db.DATA_DIR}`)); }
     if (pos[1] === 'unset') { await db.setProviderKey(pos[2], null); console.log(`  ✓ ${pos[2]} key removed`); }

@@ -20,7 +20,7 @@
   const NOISE = /^(·\s*)?(1st|2nd|3rd\+?|3rd)$|^·$|^(she|he|they)\/(her|him|them)s?$|^contact info$|^\d[\d,+]*$|^connections?$|^followers?$|^verified$/i;
 
   function profileName() {
-    // "(3) Megan Hart | LinkedIn" → "Megan Hart"
+    // "(3) Jane Doe | LinkedIn" → "Jane Doe"
     const fromTitle = document.title.replace(/^\(\d+\)\s*/, '').split('|')[0].trim();
     if (fromTitle && !/^linkedin$/i.test(fromTitle)) return fromTitle;
     return text(document.querySelector('main h1')) || text(document.querySelector('main h2'));

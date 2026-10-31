@@ -7,7 +7,7 @@ async function scrapeActiveTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab || !/linkedin\.com\/in\//.test(tab.url || '')) return null;
   linkedin = tab.url.split('?')[0];
-  // fallback if the page can't be read: "(3) Megan Hart | LinkedIn" → "Megan Hart"
+  // fallback if the page can't be read: "(3) Jane Doe | LinkedIn" → "Jane Doe"
   const fromTitle = { name: (tab.title || '').replace(/^\(\d+\)\s*/, '').split('|')[0].trim(), headline: '', companies: [] };
   const ask = () => chrome.tabs.sendMessage(tab.id, { type: 'scrape' });
   let s = null;
