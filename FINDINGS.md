@@ -51,6 +51,7 @@ look people up in chat; MCP connectors cannot be called from the extension.
 | Snov.io | 50 credits | **No** | – | Pricing FAQ: API not available in Trial. |
 | Tomba | 25 searches | Probably no | – | API listed for paid plans only. |
 | Apollo | some credits | **No** | **No** | Free-plan API and MCP calls (people match, search, bulk enrich) all fail with a plan-limit error. Free lead credits only work in Apollo's own app. |
+| Wiza | 20 valid emails + 5 phones | **No** (API only on the custom Team plan, 3+ users) | **No** (none found) | The tool this project imitates. Free credits only work in Wiza's own Chrome extension and web app. Third-party pricing guides disagree on the free amount; the official pricing page says 20 emails. |
 
 Other observations:
 
