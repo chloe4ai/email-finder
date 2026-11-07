@@ -6,7 +6,7 @@ browser, needs no account, and sends nothing to a server of ours (there is none)
 
 ## Install the Chrome extension (2 minutes)
 
-1. Download **`email-finder-extension-0.2.3.zip`** from the
+1. Download **`email-finder-extension-0.3.0.zip`** from the
    [latest release](https://github.com/chloe4ai/email-finder/releases/latest).
 2. Unzip it into a folder you'll keep (Chrome loads the extension from that folder, so don't
    leave it in Downloads and delete it later).
