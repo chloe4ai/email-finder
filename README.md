@@ -30,7 +30,7 @@ any page.
 
 | Label | Meaning |
 |---|---|
-| **valid** | Confirmed to exist (by Microsoft 365, Hunter, or Lusha). Safe to send. |
+| **valid** | Confirmed to exist (by Microsoft 365, an SMTP check, or a Hunter / Apollo / Prospeo key). Safe to send. |
 | **likely** | Strong evidence, not confirmed. Usually right. |
 | **catch_all** | The company's server accepts every address, so nobody can confirm it. |
 | **guess** | Best guess from the company's email format. Send it, but expect some bounces. |
@@ -76,8 +76,13 @@ node server.js                                 # web UI → http://localhost:479
 Add `--free` to any lookup to skip paid providers and spend no credits. The CLI keeps its own
 keys in `data/finder.db`; they are separate from the extension's.
 
+The web server listens on `127.0.0.1` only (set `HOST` to change that) and answers API calls
+only from its own page and the Chrome extension, so other websites can't read your history or
+spend your provider credits.
+
 To work on the extension from a checkout, run `npm run build:extension` (copies `engine/` into
-`extension/engine/`), then **Load unpacked** the `extension` folder. `npm run zip:extension`
+`extension/engine/`), then **Load unpacked** the `extension` folder. `npm test` runs the test
+suite (`node --test`, no dependencies, no network). `npm run zip:extension`
 builds the release zip in `dist/`.
 
 ## How it finds an address

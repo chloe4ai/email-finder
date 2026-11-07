@@ -10,11 +10,16 @@ import { DatabaseSync } from 'node:sqlite';
 import { configure } from '../engine/platform.js';
 
 // ── SMTP probe ───────────────────────────────────────────────────────
-let port25State = 'unknown'; // 'open' | 'blocked' — remembered per process
+// 'unknown' | 'open' | 'blocked'. A port-25 timeout is remembered for a while (so a
+// batch on a blocked network doesn't wait on every lookup) but not forever: one
+// slow MX must not disable SMTP probing for the life of the process.
+let port25State = 'unknown';
+let blockedUntil = 0;
+const BLOCKED_TTL = 10 * 60 * 1000;
 
-function smtpSession(host, lines, timeoutMs = 6000) {
+function smtpSession(host, lines, { port = 25, timeoutMs = 6000 } = {}) {
   return new Promise((resolve) => {
-    const sock = net.connect(25, host);
+    const sock = net.connect(port, host);
     const replies = [];
     let buf = '';
     let i = 0;
@@ -22,6 +27,7 @@ function smtpSession(host, lines, timeoutMs = 6000) {
     const finish = (err) => { if (done) return; done = true; clearTimeout(t); sock.destroy(); resolve({ replies, err }); };
     const t = setTimeout(() => finish('timeout'), timeoutMs);
     sock.on('error', (e) => finish(e.code || e.message));
+    sock.on('close', () => finish('closed'));
     sock.on('data', (d) => {
       buf += d.toString();
       let idx;
@@ -39,29 +45,44 @@ function smtpSession(host, lines, timeoutMs = 6000) {
 }
 
 const randomLocal = () => `zq${crypto.randomBytes(6).toString('hex')}`;
+const codeOf = (reply) => Number(String(reply || '').slice(0, 3));
 
-async function smtp(email, mxHosts, { probeCatchAll = true } = {}) {
-  if (port25State === 'blocked') return { status: 'unknown', reason: 'outbound port 25 blocked on this network', port25: 'blocked' };
+// opts.port / opts.timeoutMs exist for tests; real MX hosts are always probed on 25.
+async function smtp(email, mxHosts, { probeCatchAll = true, port = 25, timeoutMs = 6000 } = {}) {
+  if (port25State === 'blocked' && Date.now() < blockedUntil) return { status: 'unknown', reason: 'outbound port 25 blocked on this network', port25: 'blocked' };
   const domain = email.split('@')[1];
   const helo = 'verify.local';
   const cmds = [`EHLO ${helo}`, `MAIL FROM:<probe@${helo}>`, `RCPT TO:<${email}>`];
   if (probeCatchAll) cmds.push(`RCPT TO:<${randomLocal()}@${domain}>`);
   cmds.push('QUIT');
 
-  for (const host of mxHosts.slice(0, 2)) {
-    const { replies, err } = await smtpSession(host, cmds);
-    if (err === 'timeout' && replies.length === 0) { port25State = 'blocked'; return { status: 'unknown', reason: 'port 25 timeout (blocked by ISP/firewall?)', port25: 'blocked' }; }
-    if (err && replies.length === 0) continue; // try next MX
+  let timeouts = 0;
+  const hosts = mxHosts.slice(0, 2);
+  for (const host of hosts) {
+    const { replies, err } = await smtpSession(host, cmds, { port, timeoutMs });
+    if (err === 'timeout' && replies.length === 0) { timeouts += 1; continue; } // try next MX
+    if (err && replies.length === 0) continue; // refused / DNS error → try next MX
     port25State = 'open';
-    const rcpt = replies[3]; const rnd = replies[4];
+    // replies: [0] greeting, [1] EHLO, [2] MAIL FROM, [3] RCPT, [4] random RCPT
+    const [greet, ehlo, mail, rcpt, rnd] = replies;
+    if (codeOf(greet) >= 400) return { status: 'unknown', reason: `server refused the session: ${greet}`, port25: 'open' };
+    if (ehlo && codeOf(ehlo) >= 400) return { status: 'unknown', reason: `EHLO rejected: ${ehlo}`, port25: 'open' };
+    // a rejected sender says nothing about the mailbox: the RCPT reply after it is a 503 "bad sequence"
+    if (mail && codeOf(mail) >= 400) return { status: 'unknown', reason: `MAIL FROM rejected: ${mail}`, port25: 'open' };
     if (!rcpt) return { status: 'unknown', reason: `server closed early: ${replies.at(-1) || err}`, port25: 'open' };
-    const code = Number(rcpt.slice(0, 3));
+    const code = codeOf(rcpt);
+    if (code === 503) return { status: 'unknown', reason: `bad sequence: ${rcpt}`, port25: 'open' };
     if (code >= 500) return { status: 'invalid', reason: rcpt, port25: 'open' };
     if (code >= 400) return { status: 'unknown', reason: `greylisted/temporary: ${rcpt}`, port25: 'open' };
-    if (probeCatchAll && rnd && Number(rnd.slice(0, 3)) < 300) return { status: 'catch_all', reason: 'random mailbox also accepted', port25: 'open' };
+    if (probeCatchAll && rnd && codeOf(rnd) < 300) return { status: 'catch_all', reason: 'random mailbox also accepted', port25: 'open' };
     return { status: 'valid', reason: rcpt, port25: 'open' };
   }
-  return { status: 'unknown', reason: 'all MX hosts unreachable', port25: port25State };
+  if (timeouts && timeouts === hosts.length && port25State !== 'open') {
+    // every MX timed out and nothing has ever answered here → very likely an ISP/firewall block
+    port25State = 'blocked'; blockedUntil = Date.now() + BLOCKED_TTL;
+    return { status: 'unknown', reason: 'port 25 timeout (blocked by ISP/firewall?)', port25: 'blocked' };
+  }
+  return { status: 'unknown', reason: timeouts ? 'MX hosts timed out' : 'all MX hosts unreachable', port25: port25State };
 }
 
 // ── SQLite storage ───────────────────────────────────────────────────
@@ -128,3 +149,4 @@ configure({
 });
 
 export const port25 = () => port25State;
+export { smtp };

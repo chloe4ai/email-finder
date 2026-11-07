@@ -86,10 +86,15 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const api = (m, p, b) => fetch(p, { method: m, headers: { 'Content-Type': 'application/json' }, body: b ? JSON.stringify(b) : undefined }).then((r) => r.json());
-const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const pill = (s) => `<span class="pill ${esc(s)}">${esc(s)}</span>`;
 const sig = (s) => { if (!s) return ''; const p = []; if (s.smtp) p.push(`smtp:${s.smtp.status}`); if (s.o365) p.push(`m365:${s.o365.exists === null ? '?' : s.o365.exists}`); if (s.gravatar === true) p.push('gravatar'); return p.join(' · '); };
-const copyBtn = (e) => `<button class="copy" onclick="navigator.clipboard.writeText('${esc(e)}');this.textContent='copied'">copy</button>`;
+// the address goes in a data attribute, never into inline JS (a quote in an email must not run code)
+const copyBtn = (e) => `<button class="copy" data-copy="${esc(e)}">copy</button>`;
+document.addEventListener('click', (ev) => {
+  const b = ev.target.closest('button.copy[data-copy]');
+  if (b) { navigator.clipboard.writeText(b.dataset.copy); b.textContent = 'copied'; }
+});
 
 function renderResult(r) {
   if (r.error) return `<p class="pill invalid">${esc(r.error)}</p>`;

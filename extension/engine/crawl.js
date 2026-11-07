@@ -17,8 +17,12 @@ export async function fetchText(url) {
 export function extractEmails(html, domain) {
   const out = new Set();
   const esc = domain.replace(/\./g, '\\.');
-  const re = new RegExp(`[a-z0-9._%+-]+@(?:[a-z0-9-]+\\.)*${esc}`, 'gi');
-  const decoded = html.replace(/&#64;|&commat;|%40/gi, '@').replace(/\s*\[at\]\s*|\s*\(at\)\s*/gi, '@').replace(/\s*\[dot\]\s*|\s*\(dot\)\s*/gi, '.');
+  // right boundary: "jane@acme.community" and "bob@acme.com.evil.io" are not addresses on acme.com
+  const re = new RegExp(`[a-z0-9._%+-]+@(?:[a-z0-9-]+\\.)*${esc}(?![a-z0-9-]|\\.[a-z0-9])`, 'gi');
+  const decoded = html
+    .replace(/\\u00([0-9a-f]{2})|\\x([0-9a-f]{2})/gi, (_, a, b) => String.fromCharCode(parseInt(a || b, 16))) // JSON/JS escapes: \u003e, \x40
+    .replace(/&lt;|&gt;|&quot;|&#39;|&amp;/gi, ' ')
+    .replace(/&#64;|&commat;|%40/gi, '@').replace(/\s*\[at\]\s*|\s*\(at\)\s*/gi, '@').replace(/\s*\[dot\]\s*|\s*\(dot\)\s*/gi, '.');
   for (const m of decoded.match(re) || []) {
     const e = m.toLowerCase();
     if (/\.(png|jpg|jpeg|gif|svg|webp|css|js)$/.test(e)) continue;

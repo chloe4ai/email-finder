@@ -23,7 +23,9 @@ export async function findEmail(input, opts = {}) {
   const log = (s) => { steps.push(s); if (opts.onStep) { try { opts.onStep(s); } catch {} } };
   const verifyTop = opts.verifyTop ?? 4;
   const store = platform.storage;
-  const keys = opts.keys || await store.providerKeys();
+  const keys = { ...(opts.keys || await store.providerKeys()) };
+  // a rejected key (401/403) fails the same way on every call — stop spending requests on it
+  const dropHunter = (e) => { if (keys.hunter && (e.status === 401 || e.status === 403)) { delete keys.hunter; log('· hunter key rejected — skipping Hunter for the rest of this lookup'); } };
 
   // ── 1. who & where ─────────────────────────────────────────────────
   let name = input.name || (input.first ? `${input.first} ${input.last || ''}`.trim() : null);
@@ -46,16 +48,23 @@ export async function findEmail(input, opts = {}) {
   const prov = await runProviders({ ...person, domain, company: base.company, linkedin: input.linkedin }, keys);
   for (const a of prov.attempts) log(a.skipped ? `· ${a.provider}: skipped (${a.skipped})` : a.hit ? `✓ ${a.provider}: match` : a.optout ? `✗ ${a.provider}: ${domain || 'this domain'} opted out — its owner asked the provider to stop processing addresses on it` : `✗ ${a.provider}: no match${a.error ? ` (${a.error})` : ''}`);
   base.domain_optout = !!prov.optout;
+  if (prov.attempts.some((a) => a.provider === 'hunter' && a.auth)) dropHunter({ status: 401 });
   if (prov.hit) {
-    const e = prov.hit.email;
-    if (!domain) domain = e.split('@')[1];
-    const mx = await D.getMx(domain);
-    const sig = await verifySignals(e, mx, D.providerFromMx(mx));
+    const e = prov.hit.email.toLowerCase();
+    const [local, hitDomain] = e.split('@');
+    if (!domain) domain = hitDomain;
+    // MX / Microsoft 365 checks belong to the address's own domain, which can differ from the input
+    // (person moved jobs, subsidiary, alias domain)
+    const mx = await D.getMx(hitDomain);
+    const mxProvider = D.providerFromMx(mx);
+    const sig = await verifySignals(e, mx, mxProvider);
+    if (prov.hit.status) sig.provider = { name: prov.hit.provider, status: prov.hit.status };
     const conf = applySignals(prov.hit.confidence, sig);
-    const pat = P.patternsForLocal(e.split('@')[0], person)[0];
-    if (pat) await store.savePattern(domain, pat, conf, prov.hit.provider);
+    const pat = P.patternsForLocal(local, person)[0];
+    if (hitDomain !== domain) log(`· ${prov.hit.provider} returned an address on ${hitDomain}, not ${domain} — not learning a pattern for ${domain} from it`);
+    else if (pat) await store.savePattern(domain, pat, conf, prov.hit.provider);
     const cand = { email: e, confidence: pct(conf), pattern: pat || null, status: statusOf(sig, conf), source: prov.hit.provider, signals: sig };
-    return finish({ ...base, domain, best: cand, candidates: [cand], mx_provider: D.providerFromMx(mx), person: prov.hit.person || null }, t0);
+    return finish({ ...base, domain, best: cand, candidates: [cand], mx_provider: mxProvider, person: prov.hit.person || null }, t0);
   }
 
   if (!domain || !person.first) {
@@ -83,7 +92,7 @@ export async function findEmail(input, opts = {}) {
       else log(`· hunter knows no addresses on ${domain}`);
       hunterAcceptAll = hp.accept_all;
       if (hunterAcceptAll) log('· hunter flags this domain as accept-all (catch-all)');
-    } catch (e) { log(`· hunter pattern lookup failed: ${e.message}`); }
+    } catch (e) { log(`· hunter pattern lookup failed: ${e.message}`); dropHunter(e); }
   }
 
   let crawl = { emails: [], pages_fetched: 0, reachable: false };
@@ -119,7 +128,7 @@ export async function findEmail(input, opts = {}) {
       c.signals = await verifySignals(c.email, mx, mxProvider);
       // SMTP inconclusive (blocked, or not available here) → spend 0.5 Hunter credit on the top few
       if (keys.hunter && !base.domain_optout && c.signals.smtp?.status === 'unknown' && c.signals.o365?.exists !== true && cands.indexOf(c) < 3) {
-        try { c.signals.hunter = await hunter.verify(c.email, keys.hunter); } catch (e) { c.signals.hunter = { error: e.optout ? 'domain opted out' : e.message, optout: !!e.optout }; if (e.optout) { base.domain_optout = true; log(`✗ ${domain} opted out: its owner asked Hunter to stop processing addresses on this domain`); } }
+        try { c.signals.hunter = await hunter.verify(c.email, keys.hunter); } catch (e) { c.signals.hunter = { error: e.optout ? 'domain opted out' : e.message, optout: !!e.optout }; if (e.optout) { base.domain_optout = true; log(`✗ ${domain} opted out: its owner asked Hunter to stop processing addresses on this domain`); } dropHunter(e); }
       }
       c.confidence = applySignals(c.confidence, c.signals);
       verified += 1;
@@ -162,6 +171,7 @@ function applySignals(conf, s) {
   if (s.smtp?.status === 'invalid') return 0.02;
   if (s.hunter?.status === 'invalid') return 0.02;
   if (s.hunter?.status === 'valid') conf = Math.max(conf, 0.96);
+  if (s.provider?.status === 'valid') conf = Math.max(conf, 0.95);
   if (s.hunter?.status === 'accept_all') conf = Math.min(Math.max(conf, 0.5), 0.65);
   if (s.o365 && s.o365.exists === false) return Math.min(conf, 0.05);
   if (s.smtp?.status === 'valid') conf = Math.max(conf, 0.95);
@@ -175,7 +185,8 @@ function verifiedStatus(s) {
   if (!s || !Object.keys(s).length) return 'unverified';
   if (s.smtp?.status === 'valid' || s.o365?.exists === true || s.hunter?.status === 'valid') return 'valid';
   if (s.smtp?.status === 'invalid' || s.o365?.exists === false || s.hunter?.status === 'invalid') return 'invalid';
-  if (s.smtp?.status === 'catch_all' || s.hunter?.status === 'accept_all') return 'catch_all';
+  if (s.provider?.status === 'valid') return 'valid'; // the provider verified it (Apollo / Prospeo / Hunter finder)
+  if (s.smtp?.status === 'catch_all' || s.hunter?.status === 'accept_all' || s.provider?.status === 'accept_all') return 'catch_all';
   if (s.gravatar === true) return 'likely';
   return 'unknown';
 }

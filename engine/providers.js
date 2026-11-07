@@ -4,6 +4,16 @@
 
 
 const T = (ms) => AbortSignal.timeout(ms);
+// Error responses are not always JSON (a 429 from a proxy / CDN is often an HTML page).
+const readJson = (r) => r.json().catch(() => ({}));
+
+// Each provider names "verified" differently; the engine only needs 'valid' / 'accept_all' / other.
+function normStatus(s) {
+  const v = String(s || '').toLowerCase();
+  if (v === 'verified' || v === 'valid') return 'valid';
+  if (v === 'accept_all' || v === 'catch_all' || v === 'catch-all') return 'accept_all';
+  return s || null;
+}
 
 const HUNTER_PATTERNS = {
   '{first}.{last}': 'first.last', '{first}': 'first', '{f}{last}': 'flast', '{first}{last}': 'firstlast',
@@ -16,6 +26,7 @@ function hunterError(j, status) {
   const err = j.errors?.[0] || {};
   const e = new Error(err.details || `hunter ${status}`);
   e.code = err.id || null;
+  e.status = status;
   e.optout = err.id === 'blacklisted_domain';
   return e;
 }
@@ -26,23 +37,23 @@ const hunter = {
   async find({ first, last, domain }, key) {
     const u = `https://api.hunter.io/v2/email-finder?domain=${domain}&first_name=${encodeURIComponent(first)}&last_name=${encodeURIComponent(last)}&api_key=${key}`;
     const r = await fetch(u, { signal: T(12000) });
-    const j = await r.json();
+    const j = await readJson(r);
     if (!r.ok) throw hunterError(j, r.status);
     const d = j.data;
     if (!d?.email) return null;
-    return { email: d.email, confidence: (d.score || 0) / 100, status: d.verification?.status || null, provider: 'hunter', raw: d };
+    return { email: d.email, confidence: (d.score || 0) / 100, status: normStatus(d.verification?.status), provider: 'hunter', raw: d };
   },
   // → {pattern, accept_all, results} ; pattern is our id or null
   async pattern(domain, key) {
     const r = await fetch(`https://api.hunter.io/v2/domain-search?domain=${domain}&limit=1&api_key=${key}`, { signal: T(12000) });
-    const j = await r.json();
+    const j = await readJson(r);
     if (!r.ok) throw hunterError(j, r.status);
     const p = j.data?.pattern;
     return { pattern: p ? (HUNTER_PATTERNS[p] || null) : null, accept_all: !!j.data?.accept_all, results: j.meta?.results ?? 0 };
   },
   async verify(email, key) {
     const r = await fetch(`https://api.hunter.io/v2/email-verifier?email=${encodeURIComponent(email)}&api_key=${key}`, { signal: T(15000) });
-    const j = await r.json();
+    const j = await readJson(r);
     if (!r.ok) throw hunterError(j, r.status);
     return j.data ? { status: j.data.status, score: j.data.score, accept_all: j.data.accept_all, raw: { result: j.data.result, smtp_check: j.data.smtp_check } } : null;
   },
@@ -61,12 +72,12 @@ const apollo = {
     const r = await fetch('https://api.apollo.io/api/v1/people/match', {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': key }, body: JSON.stringify(body), signal: T(15000),
     });
-    const j = await r.json();
+    const j = await readJson(r);
     if (!r.ok) throw new Error(j.error || j.message || `apollo ${r.status}`);
     const p = j.person;
     if (!p?.email) return null;
     return {
-      email: p.email, confidence: p.email_status === 'verified' ? 0.95 : 0.7, status: p.email_status || null, provider: 'apollo',
+      email: p.email, confidence: p.email_status === 'verified' ? 0.95 : 0.7, status: normStatus(p.email_status), provider: 'apollo',
       person: { name: p.name, title: p.title, company: p.organization?.name, domain: p.organization?.primary_domain, linkedin: p.linkedin_url },
       raw: { id: p.id },
     };
@@ -90,14 +101,14 @@ const prospeo = {
     const r = await fetch('https://api.prospeo.io/enrich-person', {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'X-KEY': key }, body: JSON.stringify({ data }), signal: T(20000),
     });
-    const j = await r.json().catch(() => ({}));
+    const j = await readJson(r);
     if (j.error_code === 'NO_MATCH') return null;
     if (j.error || !r.ok) throw new Error(`prospeo: ${j.error_code || r.status}${j.error_code === 'INVALID_API_KEY' ? ' (API access needs a paid Prospeo plan)' : ''}`);
     const em = j.person?.email;
     if (!em?.email || em.email.includes('*')) return null;
     const verified = em.status === 'VERIFIED';
     return {
-      email: em.email, confidence: verified ? 0.95 : 0.7, status: verified ? 'valid' : (em.status || null), provider: 'prospeo',
+      email: em.email, confidence: verified ? 0.95 : 0.7, status: normStatus(em.status), provider: 'prospeo',
       person: { name: j.person.full_name, title: j.person.current_job_title, company: j.company?.name, domain: j.company?.domain, linkedin: j.person.linkedin_url },
       raw: { status: em.status, method: em.verification_method, free: j.free_enrichment },
     };
@@ -118,11 +129,11 @@ async function runProviders(input, keys = {}) {
       attempts.push({ provider: name, hit: !!hit });
       if (hit) return { hit, attempts };
     } catch (e) {
-      attempts.push({ provider: name, hit: false, error: e.message, optout: !!e.optout });
+      attempts.push({ provider: name, hit: false, error: e.message, optout: !!e.optout, auth: e.status === 401 || e.status === 403 });
       if (e.optout) return { hit: null, attempts, optout: true }; // the domain owner opted out — stop asking providers
     }
   }
   return { hit: null, attempts };
 }
 
-export { ADAPTERS, runProviders, hunter };
+export { ADAPTERS, runProviders, hunter, normStatus };
