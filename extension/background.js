@@ -11,7 +11,10 @@ configure({ storage: store });
 const CACHE_TTL = 60 * 60 * 1000;
 const inflight = new Map(); // cache key → promise
 
-const cacheKey = (input) => `result:${(input.linkedin || `${input.name}|${input.company}`).toLowerCase().trim()}`;
+// The company is part of the key: picking another company from the popup's "or:" list
+// for the same profile must run a new lookup, not return the first company's result.
+const norm = (s) => String(s || '').toLowerCase().trim().replace(/\s+/g, ' ');
+const cacheKey = (input) => `result:${norm(input.linkedin || input.name)}|${norm(input.domain || input.company)}`;
 
 async function cached(key) {
   const hit = (await chrome.storage.session.get(key))[key];
@@ -46,4 +49,4 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   return true; // reply asynchronously
 });
 
-export { find, handlers };
+export { find, handlers, cacheKey };
