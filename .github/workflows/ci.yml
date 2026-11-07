@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else echo "no lockfile, nothing to install"; fi
+      - name: Syntax check
+        run: git ls-files '*.js' '*.mjs' | xargs -n1 node --check
+      - name: Tests
+        run: node --test
+      - name: extension/engine is in sync with engine/
+        run: |
+          node scripts/build-extension.js
+          git diff --exit-code extension/engine
+          test -z "$(git status --porcelain extension/engine)" || { git status --porcelain extension/engine; echo "run: npm run build:extension"; exit 1; }
