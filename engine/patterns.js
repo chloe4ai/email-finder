@@ -18,8 +18,16 @@ const PATTERNS = [
   { id: 'first.l', prior: 0.005, build: (f, l) => `${f}.${l[0]}` },
 ];
 
+// Letters NFD can't decompose into "base + accent" — map them by hand.
+const TRANSLIT = {
+  ø: 'o', Ø: 'o', ł: 'l', Ł: 'l', ß: 'ss', ẞ: 'ss', æ: 'ae', Æ: 'ae', œ: 'oe', Œ: 'oe',
+  đ: 'd', Đ: 'd', ð: 'd', Ð: 'd', þ: 'th', Þ: 'th', ı: 'i', ħ: 'h', Ħ: 'h', ŧ: 't', Ŧ: 't',
+};
+const TRANSLIT_RE = new RegExp(`[${Object.keys(TRANSLIT).join('')}]`, 'g');
+
 function clean(s) {
   return String(s || '')
+    .replace(TRANSLIT_RE, (c) => TRANSLIT[c])
     .normalize('NFD').replace(/[̀-ͯ]/g, '') // strip accents
     .toLowerCase().replace(/[^a-z]/g, '');
 }
@@ -28,14 +36,44 @@ function hasCJK(s) {
   return /[㐀-鿿]/.test(String(s || ''));
 }
 
-// "Jane Doe" | "Doe, Jane" | "Dr. Jane A. Doe" → {first, last, middle}
+// Honorifics, generational suffixes and post-nominal credentials (compared without dots).
+const TITLES = new Set(['dr', 'mr', 'mrs', 'ms', 'mx', 'prof', 'sir']);
+const SUFFIXES = new Set(['jr', 'sr', 'ii', 'iii', 'iv']);
+const CREDENTIALS = new Set([
+  'phd', 'md', 'mba', 'pmp', 'cpa', 'pe', 'cfa', 'cfp', 'esq', 'jd', 'dds', 'dmd', 'do', 'rn', 'np', 'pa',
+  'msc', 'bsc', 'mph', 'mpa', 'mfa', 'llm', 'edd', 'psyd', 'cissp', 'cism', 'cisa', 'shrmcp', 'shrmscp',
+  'phr', 'sphr', 'csm', 'cma', 'cpcu', 'faia', 'aia', 'leedap', 'pmiacp', 'frm', 'caia', 'acca', 'cima',
+]);
+const bare = (w) => w.replace(/[.\-]/g, '').toLowerCase();
+const isSuffixWord = (w) => SUFFIXES.has(bare(w)) || CREDENTIALS.has(bare(w));
+
+// "MBA" / "Ph.D." / "CISSP, CISM" / "Jr." → true. All-caps words count as
+// credentials too, unless the whole name was typed in capitals ("DOE, JANE").
+function isCredentialPart(part, allCaps) {
+  const words = part.split(' ').filter(Boolean);
+  return words.length > 0 && words.every((w) => isSuffixWord(w) || (!allCaps && /^[A-Z][A-Z0-9.&\-]{1,9}$/.test(w)));
+}
+
+const EMOJI = /[\p{Extended_Pictographic}\p{Regional_Indicator}\u{1F3FB}-\u{1F3FF}‍️⃣]/gu;
+
+// "Jane Doe" | "Doe, Jane" | "Dr. Jane A. Doe" | "Jane Doe, PMP" | "Jane Doe (She/Her) 🚀"
+// | "Jane Doe - Senior Engineer - Acme" → {first, last, middle}
 function splitName(full) {
-  let s = String(full || '').trim().replace(/\s+/g, ' ');
+  let s = String(full || '')
+    .replace(EMOJI, ' ')
+    .replace(/\([^)]*\)|\[[^\]]*\]|"[^"]*"|“[^”]*”/g, ' ') // pronouns, nicknames
+    .replace(/\s+/g, ' ').trim();
+  s = s.split(/ [-–—|•·] /)[0].trim(); // "Jane Doe - Title - Company" / "Jane Doe | Title"
   if (s.includes(',')) {
-    const [last, first] = s.split(',').map((x) => x.trim());
-    s = `${first} ${last}`;
+    const allCaps = !/[a-z]/.test(s);
+    const segs = s.split(',').map((x) => x.trim()).filter(Boolean);
+    while (segs.length > 1 && isCredentialPart(segs[segs.length - 1], allCaps)) segs.pop();
+    s = segs.length > 1 ? `${segs.slice(1).join(' ')} ${segs[0]}` : (segs[0] || ''); // "Doe, Jane" → "Jane Doe"
   }
-  const parts = s.split(' ').filter((p) => !/^(dr|mr|mrs|ms|prof|phd|jr|sr|ii|iii|md|mba)\.?$/i.test(p));
+  const words = s.split(' ').filter((p) => clean(p));
+  while (words.length > 1 && TITLES.has(bare(words[0]))) words.shift();
+  while (words.length > 1 && isSuffixWord(words[words.length - 1])) words.pop();
+  const parts = words;
   if (parts.length === 0) return { first: '', last: '', middle: '' };
   if (parts.length === 1) return { first: clean(parts[0]), last: '', middle: '' };
   return {
@@ -45,13 +83,25 @@ function splitName(full) {
   };
 }
 
-// linkedin.com/in/jane2doe → "jane doe"; /in/eric-glyman-1a2b → "eric glyman"
+// decodeURIComponent that never throws: a malformed "%E0" is dropped, valid runs still decode.
+function safeDecode(s) {
+  try { return decodeURIComponent(s); } catch {
+    return s.replace(/(?:%[0-9a-f]{2})+/gi, (run) => { try { return decodeURIComponent(run); } catch { return ''; } });
+  }
+}
+
+// linkedin.com/in/jane2doe → "jane doe"; /in/eric-glyman-1a2b → "eric glyman";
+// /in/jos%C3%A9-garc%C3%ADa → "jose garcia"; /in/jane-doe-mba → "jane doe"
 function nameFromLinkedin(url) {
   const m = String(url || '').match(/linkedin\.com\/in\/([^/?#]+)/i);
   if (!m) return null;
-  let slug = decodeURIComponent(m[1]).toLowerCase();
-  slug = slug.replace(/-[0-9a-f]{6,}$/g, ''); // trailing hash LinkedIn adds for dup names
+  let slug = safeDecode(m[1]).replace(TRANSLIT_RE, (c) => TRANSLIT[c])
+    .normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  // trailing id LinkedIn adds for duplicate names ("-1a2b3c4d", "-123456"); it always has a digit,
+  // so real short surnames that happen to be hex ("decafe", "abbe") are kept
+  slug = slug.replace(/-(?=[0-9a-z]*[0-9])[0-9a-z]{3,}$/, '');
   const tokens = slug.split(/[^a-z]+/).filter(Boolean);
+  while (tokens.length > 2 && (SUFFIXES.has(tokens[tokens.length - 1]) || CREDENTIALS.has(tokens[tokens.length - 1]))) tokens.pop();
   if (tokens.length >= 2) return `${tokens[0]} ${tokens[tokens.length - 1]}`;
   return tokens[0] || null;
 }
@@ -76,7 +126,8 @@ function candidates(first, last, domain) {
 function patternsForLocal(local, name) {
   local = String(local).toLowerCase();
   if (name && name.first) {
-    return PATTERNS.filter((p) => p.build(name.first, name.last || '') === local).map((p) => p.id);
+    if (!name.last) return name.first === local ? ['first'] : []; // other builders need a last name
+    return PATTERNS.filter((p) => p.build(name.first, name.last) === local).map((p) => p.id);
   }
   const votes = [];
   if (/^[a-z]{2,}\.[a-z]{2,}$/.test(local)) votes.push('first.last');
