@@ -47,15 +47,20 @@ export async function findEmail(input, opts = {}) {
   for (const a of prov.attempts) log(a.skipped ? `· ${a.provider}: skipped (${a.skipped})` : a.hit ? `✓ ${a.provider}: match` : a.optout ? `✗ ${a.provider}: ${domain || 'this domain'} opted out — its owner asked the provider to stop processing addresses on it` : `✗ ${a.provider}: no match${a.error ? ` (${a.error})` : ''}`);
   base.domain_optout = !!prov.optout;
   if (prov.hit) {
-    const e = prov.hit.email;
-    if (!domain) domain = e.split('@')[1];
-    const mx = await D.getMx(domain);
-    const sig = await verifySignals(e, mx, D.providerFromMx(mx));
+    const e = prov.hit.email.toLowerCase();
+    const [local, hitDomain] = e.split('@');
+    if (!domain) domain = hitDomain;
+    // MX / Microsoft 365 checks belong to the address's own domain, which can differ from the input
+    // (person moved jobs, subsidiary, alias domain)
+    const mx = await D.getMx(hitDomain);
+    const mxProvider = D.providerFromMx(mx);
+    const sig = await verifySignals(e, mx, mxProvider);
     const conf = applySignals(prov.hit.confidence, sig);
-    const pat = P.patternsForLocal(e.split('@')[0], person)[0];
-    if (pat) await store.savePattern(domain, pat, conf, prov.hit.provider);
+    const pat = P.patternsForLocal(local, person)[0];
+    if (hitDomain !== domain) log(`· ${prov.hit.provider} returned an address on ${hitDomain}, not ${domain} — not learning a pattern for ${domain} from it`);
+    else if (pat) await store.savePattern(domain, pat, conf, prov.hit.provider);
     const cand = { email: e, confidence: pct(conf), pattern: pat || null, status: statusOf(sig, conf), source: prov.hit.provider, signals: sig };
-    return finish({ ...base, domain, best: cand, candidates: [cand], mx_provider: D.providerFromMx(mx), person: prov.hit.person || null }, t0);
+    return finish({ ...base, domain, best: cand, candidates: [cand], mx_provider: mxProvider, person: prov.hit.person || null }, t0);
   }
 
   if (!domain || !person.first) {
