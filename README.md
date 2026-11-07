@@ -30,7 +30,7 @@ any page.
 
 | Label | Meaning |
 |---|---|
-| **valid** | Confirmed to exist (by Microsoft 365, Hunter, or Lusha). Safe to send. |
+| **valid** | Confirmed to exist (by Microsoft 365, an SMTP check, or a Hunter / Apollo / Prospeo key). Safe to send. |
 | **likely** | Strong evidence, not confirmed. Usually right. |
 | **catch_all** | The company's server accepts every address, so nobody can confirm it. |
 | **guess** | Best guess from the company's email format. Send it, but expect some bounces. |
